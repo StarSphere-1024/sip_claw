@@ -5,6 +5,9 @@
 #define SERIAL1_TX_PIN D6
 #define SERIAL1_RX_PIN D7
 
+const char *sta_ssid = "LZF";      // 在这里填入你的 WiFi 名称
+const char *sta_password = "00008888";  // 在这里填入你的 WiFi 密码
+
 const char *ap_ssid = "ClawMachine-AP"; // AP 热点名称
 const char *ap_password = "12345678";   // AP 热点密码（至少8位）
 
@@ -53,9 +56,35 @@ const int numCommands = sizeof(commands) / sizeof(commands[0]);
 
 const char HTML_CONTENT[] = R"rawliteral(<!DOCTYPE html><html><head><title>抓娃娃机控制面板</title><meta charset="UTF-8"><style>body { font-family: Arial, sans-serif; margin: 20px; } button { padding: 10px 20px; margin: 5px; background-color: #4CAF50; color: white; border: none; cursor: pointer; } button:hover { background-color: #45a049; } input[type="text"] { padding: 10px; margin: 5px; width: 200px; } select { padding: 10px; margin: 5px; } .status { color: green; font-weight: bold; }</style></head><body><h1>抓娃娃机控制面板</h1><p class="status">连接状态: 已就绪</p><h2>基本控制命令</h2><button onclick="sendCommand('connect')">连接下位机</button><button onclick="sendCommand('start')">开始游戏</button><button onclick="sendCommand('left')">向左移动</button><button onclick="sendCommand('right')">向右移动</button><button onclick="sendCommand('forward')">向前移动</button><button onclick="sendCommand('backward')">向后移动</button><button onclick="sendCommand('stop')">停止移动</button><button onclick="sendCommand('grab200')">执行抓取 (抓力200)</button><button onclick="sendCommand('airclose160')">悬空收拢 (抓力160)</button><button onclick="sendCommand('airopen')">悬空张开</button><button onclick="sendCommand('requeststatus')">请求状态</button><button onclick="sendCommand('coinexample')">发送币数示例</button><h2>设置命令</h2><button onclick="sendCommand('basicsettings')">基础数据设置</button><button onclick="sendCommand('clawvoltage')">爪力电压设置</button><button onclick="sendCommand('motorspeed')">马达速度设置</button><button onclick="sendCommand('cleardata')">资料清除</button><button onclick="sendCommand('factoryreset')">恢复工厂设置</button><h2>查询命令</h2><button onclick="sendCommand('queryaccount')">查账</button><button onclick="sendCommand('querybasic')">查询基础数据</button><button onclick="sendCommand('queryclaw')">查询爪力电压</button><button onclick="sendCommand('querymotor')">查询马达速度</button><button onclick="sendCommand('reset')">复位</button><button onclick="sendCommand('joystick')">摇杆示例</button><button onclick="sendCommand('queryerror')">查询错误状态</button><button onclick="sendCommand('outputport')">输出端口示例</button><h2>自定义输入</h2><input type="text" id="customCmd" placeholder="输入自定义命令 (如: start)"><button onclick="sendCustom()">发送自定义命令</button><p id="response"></p><script>function sendCommand(cmd) {    fetch('/command?cmd=' + cmd).then(function(response) { return response.text(); }).then(function(data) {        document.getElementById('response').innerHTML = '回应: ' + data;    });}function sendCustom() {    var cmd = document.getElementById('customCmd').value;    if (cmd) {        sendCommand(cmd);    }}</script></body></html>)rawliteral";
 
+// 尝试连接到指定的 WiFi，如果失败则启动 AP 模式
+void setupWiFi() {
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(sta_ssid, sta_password);
+  Serial.print("正在连接到 WiFi: ");
+  Serial.println(sta_ssid);
+
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED && attempts < 20) { // 尝试连接10秒
+    delay(500);
+    Serial.print(".");
+    attempts++;
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\nWiFi 连接成功!");
+    Serial.print("IP 地址: ");
+    Serial.println(WiFi.localIP());
+    Serial.println("在浏览器输入以上 IP 地址访问 Web 控制页面。");
+  } else {
+    Serial.println("\nWiFi 连接失败。正在启动 AP 模式...");
+    setupAP(); // 连接失败，启动 AP
+  }
+}
+
 // AP 模式连接函数
 void setupAP()
 {
+  WiFi.mode(WIFI_AP); // 明确设置模式
   Serial.print("正在设置 AP 热点: ");
   Serial.println(ap_ssid);
 
@@ -63,7 +92,7 @@ void setupAP()
   WiFi.softAP(ap_ssid, ap_password);
 
   // 等待 AP 启动
-  delay(1000); // 简化等待
+  delay(100); // 短暂等待
 
   // AP 设置成功后，输出行成功消息和 IP 地址
   Serial.println("\nAP 热点设置成功!");
@@ -134,7 +163,7 @@ void setup()
   Serial.begin(115200);
   Serial.println("Xiao S3 启动中...");
 
-  setupAP(); // 设置 AP 模式
+  setupWiFi(); // 尝试连接 WiFi，如果失败则启动 AP 模式
 
   Serial1.begin(9600, SERIAL_8N1, SERIAL1_RX_PIN, SERIAL1_TX_PIN);
 
@@ -149,8 +178,7 @@ void setup()
   server.begin();
   Serial.println("Web 服务器启动，访问根页面以控制。");
 
-  Serial.println("Xiao S3 Upper Computer Initialized (AP Mode, Web Control).");
-  Serial.println("连接 AP 后，在浏览器输入 IP (如 192.168.4.1) 访问控制页面。");
+  Serial.println("Xiao S3 Upper Computer Initialized.");
 }
 
 void loop()
@@ -164,46 +192,14 @@ void loop()
 
 void handleSerialResponse()
 {
-  static byte buffer[64]; // 缓冲区，用于存储传入的数据
-  static int bufferIndex = 0;
-  const byte startMarker = 0x8A;
-  const byte endMarker = 0x55;
-
-  while (Serial1.available() > 0)
-  {
-    byte incomingByte = Serial1.read();
-
-    if (bufferIndex == 0 && incomingByte == startMarker)
-    {
-      // 发现起始符
-      buffer[bufferIndex++] = incomingByte;
+  if (Serial1.available() > 0) {
+    Serial.print("从娃娃机收到数据: ");
+    while (Serial1.available() > 0) {
+      byte incomingByte = Serial1.read();
+      Serial.print(incomingByte, HEX);
+      Serial.print(" ");
     }
-    else if (bufferIndex > 0)
-    {
-      // 正在接收数据包
-      buffer[bufferIndex++] = incomingByte;
-      if (incomingByte == endMarker)
-      {
-        // 发现结束符，数据包接收完毕
-        // 在这里可以添加校验和验证
-        Serial.print("从抓娃娃机收到完整数据包: ");
-        for (int i = 0; i < bufferIndex; i++)
-        {
-          Serial.print(buffer[i], HEX);
-          Serial.print(" ");
-        }
-        Serial.println();
-
-        // 重置缓冲区
-        bufferIndex = 0;
-      }
-      else if (bufferIndex >= sizeof(buffer))
-      {
-        // 缓冲区溢出，丢弃数据并重置
-        Serial.println("错误: 串口接收缓冲区溢出。");
-        bufferIndex = 0;
-      }
-    }
+    Serial.println();
   }
 }
 //
