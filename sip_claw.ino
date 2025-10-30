@@ -192,8 +192,9 @@ void loop()
 
 void handleSerialResponse()
 {
+  // --- 调试代码：打印所有收到的原始数据 ---
   if (Serial1.available() > 0) {
-    Serial.print("从娃娃机收到数据: ");
+    Serial.print("收到原始数据: ");
     while (Serial1.available() > 0) {
       byte incomingByte = Serial1.read();
       Serial.print(incomingByte, HEX);
@@ -201,5 +202,50 @@ void handleSerialResponse()
     }
     Serial.println();
   }
+
+  // --- 抓包分析代码 (暂时注释掉) ---
+  /*
+  static byte buffer[64]; // 缓冲区，用于存储传入的数据
+  static int bufferIndex = 0;
+  const byte startMarker = 0x8A;
+  const byte endMarker = 0x55;
+
+  while (Serial1.available() > 0)
+  {
+    byte incomingByte = Serial1.read();
+
+    if (bufferIndex == 0 && incomingByte == startMarker)
+    {
+      // 发现起始符
+      buffer[bufferIndex++] = incomingByte;
+    }
+    else if (bufferIndex > 0)
+    {
+      // 正在接收数据包
+      buffer[bufferIndex++] = incomingByte;
+      if (incomingByte == endMarker)
+      {
+        // 发现结束符，数据包接收完毕
+        // 在这里可以添加校验和验证
+        Serial.print("从抓娃娃机收到完整数据包: ");
+        for (int i = 0; i < bufferIndex; i++)
+        {
+          Serial.print(buffer[i], HEX);
+          Serial.print(" ");
+        }
+        Serial.println();
+
+        // 重置缓冲区
+        bufferIndex = 0;
+      }
+      else if (bufferIndex >= sizeof(buffer))
+      {
+        // 缓冲区溢出，丢弃数据并重置
+        Serial.println("错误: 串口接收缓冲区溢出。");
+        bufferIndex = 0;
+      }
+    }
+  }
+  */
 }
 //
