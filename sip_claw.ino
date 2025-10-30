@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WebServer.h>
+#include <LittleFS.h>
 
 #define SERIAL1_TX_PIN D6
 #define SERIAL1_RX_PIN D7
@@ -53,8 +54,6 @@ const Command commands[] = {
   {"outputport",    (const byte[]){0x8A, 0x04, 0x1C, 0x01, 0x00, 0x21, 0x55}, 7}
 };
 const int numCommands = sizeof(commands) / sizeof(commands[0]);
-
-const char HTML_CONTENT[] = R"rawliteral(<!DOCTYPE html><html><head><title>抓娃娃机控制面板</title><meta charset="UTF-8"><style>body { font-family: Arial, sans-serif; margin: 20px; } button { padding: 10px 20px; margin: 5px; background-color: #4CAF50; color: white; border: none; cursor: pointer; } button:hover { background-color: #45a049; } input[type="text"] { padding: 10px; margin: 5px; width: 200px; } select { padding: 10px; margin: 5px; } .status { color: green; font-weight: bold; }</style></head><body><h1>抓娃娃机控制面板</h1><p class="status">连接状态: 已就绪</p><h2>基本控制命令</h2><button onclick="sendCommand('connect')">连接下位机</button><button onclick="sendCommand('start')">开始游戏</button><button onclick="sendCommand('left')">向左移动</button><button onclick="sendCommand('right')">向右移动</button><button onclick="sendCommand('forward')">向前移动</button><button onclick="sendCommand('backward')">向后移动</button><button onclick="sendCommand('stop')">停止移动</button><button onclick="sendCommand('grab200')">执行抓取 (抓力200)</button><button onclick="sendCommand('airclose160')">悬空收拢 (抓力160)</button><button onclick="sendCommand('airopen')">悬空张开</button><button onclick="sendCommand('requeststatus')">请求状态</button><button onclick="sendCommand('coinexample')">发送币数示例</button><h2>设置命令</h2><button onclick="sendCommand('basicsettings')">基础数据设置</button><button onclick="sendCommand('clawvoltage')">爪力电压设置</button><button onclick="sendCommand('motorspeed')">马达速度设置</button><button onclick="sendCommand('cleardata')">资料清除</button><button onclick="sendCommand('factoryreset')">恢复工厂设置</button><h2>查询命令</h2><button onclick="sendCommand('queryaccount')">查账</button><button onclick="sendCommand('querybasic')">查询基础数据</button><button onclick="sendCommand('queryclaw')">查询爪力电压</button><button onclick="sendCommand('querymotor')">查询马达速度</button><button onclick="sendCommand('reset')">复位</button><button onclick="sendCommand('joystick')">摇杆示例</button><button onclick="sendCommand('queryerror')">查询错误状态</button><button onclick="sendCommand('outputport')">输出端口示例</button><h2>自定义输入</h2><input type="text" id="customCmd" placeholder="输入自定义命令 (如: start)"><button onclick="sendCustom()">发送自定义命令</button><p id="response"></p><script>function sendCommand(cmd) {    fetch('/command?cmd=' + cmd).then(function(response) { return response.text(); }).then(function(data) {        document.getElementById('response').innerHTML = '回应: ' + data;    });}function sendCustom() {    var cmd = document.getElementById('customCmd').value;    if (cmd) {        sendCommand(cmd);    }}</script></body></html>)rawliteral";
 
 // 尝试连接到指定的 WiFi，如果失败则启动 AP 模式
 void setupWiFi() {
@@ -127,7 +126,13 @@ void sendCommand(const byte *cmd, size_t len, const char *cmdName)
 // 处理 Web 请求 - 根页面
 void handleRoot()
 {
-  server.send(200, "text/html", HTML_CONTENT);
+  if (LittleFS.exists("/index.html")) {
+    File file = LittleFS.open("/index.html", "r");
+    server.streamFile(file, "text/html");
+    file.close();
+  } else {
+    server.send(404, "text/plain", "File not found");
+  }
 }
 
 // 处理命令请求
@@ -162,6 +167,12 @@ void setup()
   // 启动标准 USB 串口，用于调试和打印消息到 Arduino IDE 串口监视器。
   Serial.begin(115200);
   Serial.println("Xiao S3 启动中...");
+
+  // 初始化 LittleFS
+  if(!LittleFS.begin()){
+    Serial.println("An Error has occurred while mounting LittleFS");
+    return;
+  }
 
   setupWiFi(); // 尝试连接 WiFi，如果失败则启动 AP 模式
 
