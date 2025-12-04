@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>极限蓄能</title>
+    <style>
+        body {
+            background-color: #1a1a1d;
+            color: #c3073f;
+            font-family: 'Segoe UI', sans-serif;
+            text-align: center;
+            overflow: hidden;
+            user-select: none;
+            touch-action: manipulation;
+        }
+
+        h1 {
+            margin-top: 15px;
+            font-size: 24px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: #950740;
+            text-shadow: 0 0 10px rgba(195, 7, 63, 0.5);
+        }
+
+        .bar-container {
+            width: 80%;
+            height: 300px;
+            background: #0b0c10;
+            margin: 20px auto;
+            border: 4px solid #45a29e;
+            border-radius: 10px;
+            position: relative;
+            box-shadow: 0 0 20px rgba(69, 162, 158, 0.2);
+            overflow: hidden;
+        }
+
+        .bar-fill {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 0%;
+            background: linear-gradient(to top, #45a29e, #66fcf1);
+            transition: height 0.05s linear;
+            box-shadow: 0 0 20px #66fcf1;
+        }
+
+        .limit-line {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: rgba(255, 255, 255, 0.2);
+            z-index: 2;
+        }
+
+        #timer {
+            font-size: 40px;
+            font-weight: bold;
+            color: #fff;
+            margin: 10px 0;
+            font-family: monospace;
+        }
+
+        #mashBtn {
+            width: 80%;
+            height: 80px;
+            background: #c3073f;
+            border: none;
+            border-radius: 10px;
+            color: white;
+            font-size: 28px;
+            font-weight: 900;
+            box-shadow: 0 8px 0 #6f0000;
+            transition: all 0.05s;
+            outline: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        #mashBtn:active {
+            transform: translateY(6px);
+            box-shadow: 0 2px 0 #6f0000;
+            background: #e60a4b;
+        }
+
+        #mashBtn:disabled {
+            background: #555;
+            box-shadow: none;
+            transform: translateY(6px);
+            color: #888;
+        }
+
+        @keyframes shake {
+            0% {
+                transform: translate(1px, 1px) rotate(0deg);
+            }
+
+            10% {
+                transform: translate(-1px, -2px) rotate(-1deg);
+            }
+
+            20% {
+                transform: translate(-3px, 0px) rotate(1deg);
+            }
+
+            30% {
+                transform: translate(3px, 2px) rotate(0deg);
+            }
+
+            40% {
+                transform: translate(1px, -1px) rotate(1deg);
+            }
+
+            50% {
+                transform: translate(-1px, 2px) rotate(-1deg);
+            }
+
+            60% {
+                transform: translate(-3px, 1px) rotate(0deg);
+            }
+
+            70% {
+                transform: translate(3px, 1px) rotate(-1deg);
+            }
+
+            80% {
+                transform: translate(-1px, -1px) rotate(1deg);
+            }
+
+            90% {
+                transform: translate(1px, 2px) rotate(0deg);
+            }
+
+            100% {
+                transform: translate(1px, -2px) rotate(-1deg);
+            }
+        }
+
+        .shake-screen {
+            animation: shake 0.2s;
+            animation-iteration-count: 1;
+        }
+
+        #status {
+            font-size: 14px;
+            margin-top: 10px;
+            color: #888;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>⚡ 极限蓄能 ⚡</h1>
+    <div id="status">连点按钮，充满能量！</div>
+
+    <div id="timer">10.00</div>
+
+    <div class="bar-container">
+        <div class="bar-fill" id="fill"></div>
+    </div>
+
+    <button id="mashBtn" ontouchstart="handleTap()" onmousedown="handleTap()">点我充能！</button>
+
+    <script>
+        let energy = 0;
+        let isPlaying = false;
+        let hasEnded = false;
+        let decaySpeed = 45;
+        let lastTime = 0;
+        let tapPower = 5;
+        let timeLeft = 10.00;
+        let gameLoopId = null;
+        let timerId = null;
+
+        const fill = document.getElementById('fill');
+        const timerDisplay = document.getElementById('timer');
+        const btn = document.getElementById('mashBtn');
+        const statusDiv = document.getElementById('status');
+
+        function gameLoop(timestamp) {
+            if (!isPlaying) return;
+
+            const now = timestamp || performance.now();
+            let deltaTime = (now - lastTime) / 1000;
+            lastTime = now;
+
+            // 防止切换标签页导致的时间跳跃
+            if (deltaTime > 0.1) deltaTime = 0.1;
+
+            if (energy > 0) {
+                energy -= decaySpeed * deltaTime;
+            }
+
+            if (energy < 0) energy = 0;
+            if (energy >= 100) {
+                energy = 100;
+                winGame();
+                return;
+            }
+
+            fill.style.height = energy + '%';
+
+            if (energy > 80) fill.style.background = "#ff0000";
+            else fill.style.background = "linear-gradient(to top, #45a29e, #66fcf1)";
+
+            gameLoopId = requestAnimationFrame(gameLoop);
+        }
+
+        function handleTap(e) {
+            if (e) e.preventDefault();
+
+            if (hasEnded) return;
+
+            if (!isPlaying) {
+                startGame();
+                return;
+            }
+
+            energy += tapPower;
+
+            if (navigator.vibrate) navigator.vibrate(30);
+
+            document.body.className = 'shake-screen';
+            setTimeout(() => { document.body.className = ''; }, 200);
+
+            fill.style.height = energy + '%';
+        }
+
+        function startGame() {
+            if (isPlaying) return;
+
+            if (timeLeft <= 0) resetGame();
+
+            isPlaying = true;
+            hasEnded = false;
+            btn.innerHTML = "疯狂点击！！！";
+            statusDiv.innerHTML = "加油！别停下！";
+
+            lastTime = performance.now();
+            gameLoop();
+
+            timerId = setInterval(() => {
+                timeLeft -= 0.01;
+                timerDisplay.innerHTML = timeLeft.toFixed(2);
+
+                if (timeLeft <= 0) {
+                    loseGame();
+                }
+            }, 10);
+        }
+
+        function winGame() {
+            hasEnded = true;
+            btn.disabled = true;
+            endGame();
+            btn.innerHTML = "充能成功！";
+            btn.style.background = "#2ecc71";
+            statusDiv.innerHTML = "正在投币...";
+            statusDiv.style.color = "#2ecc71";
+            fill.style.height = '100%';
+
+            fetch('/insert_coin').then(res => {
+                if (res.ok) {
+                    statusDiv.innerHTML = "✅ 投币完成！快去抓！";
+                    setTimeout(resetGame, 3000);
+                } else {
+                    statusDiv.innerHTML = "❌ 投币失败，请稍后重试";
+                    statusDiv.style.color = "#e74c3c";
+                    setTimeout(resetGame, 3000);
+                }
+            }).catch(() => {
+                statusDiv.innerHTML = "❌ 投币失败，请检查网络";
+                statusDiv.style.color = "#e74c3c";
+                setTimeout(resetGame, 3000);
+            });
+        }
+
+        function loseGame() {
+            hasEnded = true;
+            endGame();
+            btn.innerHTML = "失败了...";
+            btn.style.background = "#555";
+            statusDiv.innerHTML = "手速不够啊，再试一次？";
+            timerDisplay.innerHTML = "0.00";
+            btn.disabled = true;
+            setTimeout(resetGame, 2000);
+        }
+
+        function endGame() {
+            isPlaying = false;
+            if (gameLoopId) {
+                cancelAnimationFrame(gameLoopId);
+                gameLoopId = null;
+            }
+            clearInterval(timerId);
+        }
+
+        function resetGame() {
+            endGame();
+            energy = 0;
+            timeLeft = 10.00;
+            hasEnded = false;
+            fill.style.height = '0%';
+            timerDisplay.innerHTML = "10.00";
+            btn.innerHTML = "开始挑战";
+            btn.style.background = "#c3073f";
+            btn.disabled = false;
+            statusDiv.innerHTML = "连点按钮，充满能量！";
+            statusDiv.style.color = "#888";
+        }
+    </script>
+</body>
+
+</html>
