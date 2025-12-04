@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>游戏管理后台</title>
+    <style>
+        body {
+            background-color: #f4f4f9;
+            color: #333;
+            font-family: 'Segoe UI', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 400px;
+        }
+        h2 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 1.5rem;
+        }
+        .form-group {
+            margin-bottom: 1rem;
+        }
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: bold;
+        }
+        input {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            width: 100%;
+            padding: 0.75rem;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1rem;
+            margin-top: 1rem;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        #login-section, #config-section {
+            display: none;
+        }
+        .active {
+            display: block !important;
+        }
+        .message {
+            margin-top: 1rem;
+            text-align: center;
+            font-size: 0.9rem;
+        }
+        .error { color: #e74c3c; }
+        .success { color: #2ecc71; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div id="login-section" class="active">
+        <h2>管理员登录</h2>
+        <div class="form-group">
+            <label>密码</label>
+            <input type="password" id="login-password" placeholder="请输入管理员密码">
+        </div>
+        <button onclick="login()">登录</button>
+        <div id="login-msg" class="message"></div>
+    </div>
+
+    <div id="config-section">
+        <h2>游戏参数配置</h2>
+        <div class="form-group">
+            <label>能量衰减速度 (Decay Speed)</label>
+            <input type="number" id="decaySpeed" step="1">
+        </div>
+        <div class="form-group">
+            <label>点击增加能量 (Tap Power)</label>
+            <input type="number" id="tapPower" step="1">
+        </div>
+        <div class="form-group">
+            <label>游戏时长 (秒)</label>
+            <input type="number" id="gameDuration" step="1">
+        </div>
+        <hr>
+        <h3>网络设置 (重启生效)</h3>
+        <div class="form-group">
+            <label>WiFi 名称 (SSID)</label>
+            <input type="text" id="ssid" placeholder="当前WiFi名称">
+        </div>
+        <div class="form-group">
+            <label>WiFi 密码</label>
+            <input type="password" id="wifiPassword" placeholder="留空不修改">
+        </div>
+        <hr>
+        <div class="form-group">
+            <label>修改管理员密码 (留空不修改)</label>
+            <input type="password" id="newPassword" placeholder="新密码">
+        </div>
+        <button onclick="saveConfig()">保存配置</button>
+        <div id="config-msg" class="message"></div>
+    </div>
+</div>
+
+<script>
+    let currentPassword = "";
+
+    function login() {
+        const pwd = document.getElementById('login-password').value;
+        const msg = document.getElementById('login-msg');
+        
+        fetch('/api/admin/verify', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: 'password=' + encodeURIComponent(pwd)
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                currentPassword = pwd;
+                document.getElementById('login-section').classList.remove('active');
+                document.getElementById('config-section').classList.add('active');
+                loadConfig();
+            } else {
+                msg.textContent = "密码错误";
+                msg.className = "message error";
+            }
+        })
+        .catch(err => {
+            msg.textContent = "网络错误";
+            msg.className = "message error";
+        });
+    }
+
+    function loadConfig() {
+        fetch('/api/config')
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('decaySpeed').value = data.decaySpeed;
+                document.getElementById('tapPower').value = data.tapPower;
+                document.getElementById('gameDuration').value = data.gameDuration;
+                document.getElementById('ssid').value = data.ssid || "";
+            });
+    }
+
+    function saveConfig() {
+        const decaySpeed = document.getElementById('decaySpeed').value;
+        const tapPower = document.getElementById('tapPower').value;
+        const gameDuration = document.getElementById('gameDuration').value;
+        const newPassword = document.getElementById('newPassword').value;
+        const ssid = document.getElementById('ssid').value;
+        const wifiPassword = document.getElementById('wifiPassword').value;
+        const msg = document.getElementById('config-msg');
+
+        const params = new URLSearchParams();
+        params.append('password', currentPassword);
+        params.append('decaySpeed', decaySpeed);
+        params.append('tapPower', tapPower);
+        params.append('gameDuration', gameDuration);
+        if (newPassword) params.append('newPassword', newPassword);
+        if (ssid) params.append('ssid', ssid);
+        if (wifiPassword) params.append('wifiPassword', wifiPassword);
+
+        fetch('/api/admin/save', {
+            method: 'POST',
+            body: params
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                msg.textContent = "保存成功！";
+                msg.className = "message success";
+                if (newPassword) {
+                    currentPassword = newPassword;
+                    document.getElementById('newPassword').value = "";
+                }
+            } else {
+                msg.textContent = "保存失败: " + (data.message || "未知错误");
+                msg.className = "message error";
+            }
+        })
+        .catch(err => {
+            msg.textContent = "保存失败: 网络错误";
+            msg.className = "message error";
+        });
+    }
+</script>
+
+</body>
+</html>

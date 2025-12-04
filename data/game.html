@@ -173,6 +173,7 @@
         let decaySpeed = 45;
         let lastTime = 0;
         let tapPower = 5;
+        let gameDuration = 10.00;
         let timeLeft = 10.00;
         let gameLoopId = null;
         let timerId = null;
@@ -181,6 +182,18 @@
         const timerDisplay = document.getElementById('timer');
         const btn = document.getElementById('mashBtn');
         const statusDiv = document.getElementById('status');
+
+        // Fetch config on load
+        fetch('/api/config')
+            .then(res => res.json())
+            .then(data => {
+                decaySpeed = data.decaySpeed;
+                tapPower = data.tapPower;
+                gameDuration = data.gameDuration;
+                timeLeft = gameDuration;
+                timerDisplay.innerHTML = timeLeft.toFixed(2);
+            })
+            .catch(err => console.error("Failed to load config", err));
 
         function gameLoop(timestamp) {
             if (!isPlaying) return;
@@ -303,10 +316,10 @@
         function resetGame() {
             endGame();
             energy = 0;
-            timeLeft = 10.00;
+            timeLeft = gameDuration;
             hasEnded = false;
             fill.style.height = '0%';
-            timerDisplay.innerHTML = "10.00";
+            timerDisplay.innerHTML = timeLeft.toFixed(2);
             btn.innerHTML = "开始挑战";
             btn.style.background = "#c3073f";
             btn.disabled = false;
