@@ -4,6 +4,7 @@
 #include <LittleFS.h>
 #include <ESPmDNS.h>
 #include <Preferences.h>
+#include <ArduinoJson.h>
 
 const int RELAY_PIN = D0;
 const int BUTTON_PIN = 0;
@@ -14,8 +15,12 @@ const int DEBOUNCE_DELAY_MS = 50;
 const int RELAY_ON = HIGH;
 const int RELAY_OFF = LOW;
 
-String ssid = "SEEED-MKT";
-String wifiPassword = "edgemaker2023";
+String ssid;
+String wifiPassword;
+
+// Cache for HTML files to reduce I/O
+String gameHtmlCache;
+String adminHtmlCache;
 
 int lastButtonState = HIGH;
 int currentStableState = HIGH;
@@ -33,6 +38,38 @@ int decaySpeed = 45;
 int tapPower = 5;
 int gameDuration = 10;
 String adminPassword = "admin";
+
+/**
+ * @brief Update an integer preference if the argument exists and is valid.
+ * 
+ * @param argName The name of the HTTP argument.
+ * @param var Reference to the variable to update.
+ * @param prefKey The key in Preferences.
+ * @param minVal Minimum valid value (inclusive).
+ */
+void updateIntPref(const String& argName, int& var, const char* prefKey, int minVal) {
+    if (server.hasArg(argName)) {
+        int val = server.arg(argName).toInt();
+        if (val >= minVal) {
+            var = val;
+            preferences.putInt(prefKey, var);
+        }
+    }
+}
+
+/**
+ * @brief Update a string preference if the argument exists and is not empty.
+ * 
+ * @param argName The name of the HTTP argument.
+ * @param var Reference to the variable to update.
+ * @param prefKey The key in Preferences.
+ */
+void updateStringPref(const String& argName, String& var, const char* prefKey) {
+    if (server.hasArg(argName) && server.arg(argName).length() > 0) {
+        var = server.arg(argName);
+        preferences.putString(prefKey, var);
+    }
+}
 
 /**
  * @brief Generate a relay pulse to simulate coin insertion (Non-blocking).
@@ -146,28 +183,16 @@ void handleButtonInput()
 /**
  * @brief HTTP handler for the root path.
  *
- * Serves "/game.html" from LittleFS as the main game page.
+ * Serves "/game.html" from memory cache.
  */
 void handleRoot()
 {
-    if (!LittleFS.exists("/game.html"))
+    if (gameHtmlCache.length() == 0)
     {
-        Serial.println("game.html not found in LittleFS");
-        server.send(500, "text/plain", "game.html not found");
+        server.send(500, "text/plain", "game.html not loaded");
         return;
     }
-
-    File file = LittleFS.open("/game.html", "r");
-    if (!file)
-    {
-        server.send(500, "text/plain", "Failed to open game.html");
-        return;
-    }
-
-    // Cache for 1 hour to reduce load
-    server.sendHeader("Cache-Control", "max-age=3600");
-    server.streamFile(file, "text/html; charset=utf-8");
-    file.close();
+    server.send(200, "text/html", gameHtmlCache);
 }
 
 /**
@@ -192,31 +217,31 @@ void handleNotFound()
 
 void handleAdmin()
 {
-    if (!LittleFS.exists("/admin.html"))
+    if (adminHtmlCache.length() == 0)
     {
-        server.send(404, "text/plain", "Admin page not found");
+        server.send(500, "text/plain", "admin.html not loaded");
         return;
     }
-    File file = LittleFS.open("/admin.html", "r");
-    server.sendHeader("Cache-Control", "max-age=3600");
-    server.streamFile(file, "text/html");
-    file.close();
+    server.send(200, "text/html", adminHtmlCache);
 }
 
 void handleGetConfig()
 {
+    JsonDocument doc;
+    doc["decaySpeed"] = decaySpeed;
+    doc["tapPower"] = tapPower;
+    doc["gameDuration"] = gameDuration;
+    doc["ssid"] = ssid;
+
     String json;
-    json.reserve(256);
-    json = "{";
-    json += "\"decaySpeed\":" + String(decaySpeed) + ",";
-    json += "\"tapPower\":" + String(tapPower) + ",";
-    json += "\"gameDuration\":" + String(gameDuration) + ",";
-    json += "\"ssid\":\"" + ssid + "\"";
-    json += "}";
+    serializeJson(doc, json);
     server.send(200, "application/json", json);
 }
 
-void handleAdminVerify()
+/**
+ * @brief Verify admin password for login.
+ */
+void handleAdminLogin()
 {
     if (!server.hasArg("password"))
     {
@@ -233,6 +258,11 @@ void handleAdminVerify()
     }
 }
 
+/**
+ * @brief Handle configuration save requests.
+ * 
+ * Validates admin password and updates game/network settings.
+ */
 void handleSaveConfig()
 {
     if (!server.hasArg("password"))
@@ -247,46 +277,13 @@ void handleSaveConfig()
         return;
     }
 
-    if (server.hasArg("decaySpeed"))
-    {
-        int val = server.arg("decaySpeed").toInt();
-        if (val >= 0)
-            decaySpeed = val;
-    }
-    if (server.hasArg("tapPower"))
-    {
-        int val = server.arg("tapPower").toInt();
-        if (val > 0)
-            tapPower = val;
-    }
-    if (server.hasArg("gameDuration"))
-    {
-        int val = server.arg("gameDuration").toInt();
-        if (val > 0)
-            gameDuration = val;
-    }
-
-    if (server.hasArg("newPassword") && server.arg("newPassword").length() > 0)
-    {
-        adminPassword = server.arg("newPassword");
-        preferences.putString("adminPassword", adminPassword);
-    }
-
-    if (server.hasArg("ssid") && server.arg("ssid").length() > 0)
-    {
-        ssid = server.arg("ssid");
-        preferences.putString("ssid", ssid);
-    }
-
-    if (server.hasArg("wifiPassword") && server.arg("wifiPassword").length() > 0)
-    {
-        wifiPassword = server.arg("wifiPassword");
-        preferences.putString("wifiPassword", wifiPassword);
-    }
-
-    preferences.putInt("decaySpeed", decaySpeed);
-    preferences.putInt("tapPower", tapPower);
-    preferences.putInt("gameDuration", gameDuration);
+    updateIntPref("decaySpeed", decaySpeed, "decaySpeed", 0);
+    updateIntPref("tapPower", tapPower, "tapPower", 1);
+    updateIntPref("gameDuration", gameDuration, "gameDuration", 1);
+    
+    updateStringPref("newPassword", adminPassword, "adminPassword");
+    updateStringPref("ssid", ssid, "ssid");
+    updateStringPref("wifiPassword", wifiPassword, "wifiPassword");
 
     server.send(200, "application/json", "{\"success\":true}");
 }
@@ -298,20 +295,7 @@ void setup()
 
     preferences.begin("game-config", false);
 
-    // Initialize defaults if keys are missing to avoid "NOT_FOUND" errors
-    if (!preferences.isKey("adminPassword"))
-        preferences.putString("adminPassword", "admin");
-    if (!preferences.isKey("decaySpeed"))
-        preferences.putInt("decaySpeed", 45);
-    if (!preferences.isKey("tapPower"))
-        preferences.putInt("tapPower", 5);
-    if (!preferences.isKey("gameDuration"))
-        preferences.putInt("gameDuration", 10);
-    if (!preferences.isKey("ssid"))
-        preferences.putString("ssid", "SEEED-MKT");
-    if (!preferences.isKey("wifiPassword"))
-        preferences.putString("wifiPassword", "edgemaker2023");
-
+    // Load config from NVS, use defaults if not found
     decaySpeed = preferences.getInt("decaySpeed", 45);
     tapPower = preferences.getInt("tapPower", 5);
     gameDuration = preferences.getInt("gameDuration", 10);
@@ -331,6 +315,17 @@ void setup()
     else
     {
         Serial.println("LittleFS mounted successfully.");
+        // Preload HTML files
+        if (LittleFS.exists("/game.html")) {
+            File file = LittleFS.open("/game.html", "r");
+            gameHtmlCache = file.readString();
+            file.close();
+        }
+        if (LittleFS.exists("/admin.html")) {
+            File file = LittleFS.open("/admin.html", "r");
+            adminHtmlCache = file.readString();
+            file.close();
+        }
     }
 
     WiFi.mode(WIFI_STA);
@@ -372,7 +367,7 @@ void setup()
     server.on("/insert_coin", HTTP_GET, handleInsertCoin);
     server.on("/admin", HTTP_GET, handleAdmin);
     server.on("/api/config", HTTP_GET, handleGetConfig);
-    server.on("/api/admin/verify", HTTP_POST, handleAdminVerify);
+    server.on("/api/admin/verify", HTTP_POST, handleAdminLogin);
     server.on("/api/admin/save", HTTP_POST, handleSaveConfig);
     server.onNotFound(handleNotFound);
     server.begin();
